@@ -1,9 +1,9 @@
-#include <Wire.h>
+#include "GravityTDS.h"
+#include <AFMotor.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <AFMotor.h>
+#include <Wire.h>
 #include <math.h>
-#include "GravityTDS.h"
 
 // SETPOINT DEFINITIONS
 #define TDS_SETPOINT 1500
@@ -26,15 +26,14 @@
 #define REVERSE_RATE 8.75
 #define FORWARD_RATE 33.16667
 
-//The OLEDs you have in your kit are 0.96" I2C 128x64 Monochrome OLEDs
-// 0.96" is the screen size, I2C is the protocol it uses to talk to the Arduino
-#define SCREEN_WIDTH 128 // OLED display width, in pixels. 
+// The OLEDs you have in your kit are 0.96" I2C 128x64 Monochrome OLEDs
+//  0.96" is the screen size, I2C is the protocol it uses to talk to the Arduino
+#define SCREEN_WIDTH 128 // OLED display width, in pixels.
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define OLED_RESET -1    // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-
-#define OLED_I2C_ADDRESS 0x3C // !!IMPORTANT!!: If OLED does not show any text, switch this value to 0x3D
+#define OLED_I2C_ADDRESS 0x3C
 
 GravityTDS TDSProbe;
 
@@ -47,24 +46,28 @@ AF_DCMotor mixingMotor(1);
 void setup() {
   Serial.begin(9600);
 
-  delay(1000); // allow all sensors to stabilize somewhat before starting anything
+  delay(
+      1000); // allow all sensors to stabilize somewhat before starting anything
 
   // SET CORRECT PIN MODES
   pinMode(START_BUTTON, INPUT_PULLUP);
   pinMode(ESTOP_BUTTON, INPUT_PULLUP);
+
+  // INITIALIZE TDS PROBE
   TDSProbe.setPin(TDS_PROBE);
   TDSProbe.setAref(5.0);
   TDSProbe.setAdcRange(1024);
   TDSProbe.begin();
 
-  /* This section is used to initilize the OLED Display. If the display.begin() fails, it locks the setup into a loop.
-  * You dont need to change anything. You can use this section of the code as is.
-  * If you don't see anything on the screen, change the OLED_I2C_ADDRESS defined above to 0x3D 
-  */
-  if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS)) 
-  { 
+  /* This section is used to initilize the OLED Display. If the display.begin()
+   * fails, it locks the setup into a loop. You dont need to change anything.
+   * You can use this section of the code as is. If you don't see anything on
+   * the screen, change the OLED_I2C_ADDRESS defined above to 0x3D
+   */
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS)) {
     Serial.println(F("DEBUG: SSD1306 allocation failed, halting"));
-    for(;;); // Don't proceed, loop forever if the OLED did not initialize
+    for (;;)
+      ; // Don't proceed, loop forever if the OLED did not initialize
   }
 
   // prevent starting if liquid not up to required level
@@ -72,14 +75,15 @@ void setup() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0,0);
+  display.setCursor(0, 0);
   display.println(F("Please fill tank to required level."));
   display.display();
 
   Serial.println("DEBUG: waiting for water level");
 
-  while (digitalRead(LIQUID_LEVEL_SENSOR) == HIGH) { // while no water is detected
-    continue; // do nothing
+  while (digitalRead(LIQUID_LEVEL_SENSOR) ==
+         HIGH) { // while no water is detected
+    continue;    // do nothing
   }
 
   Serial.println("DEBUG: water level adequate, continuing");
@@ -89,7 +93,7 @@ void setup() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0,0);
+  display.setCursor(0, 0);
 
   display.println(F("Ready to start. Press the"));
   display.setTextSize(2);
@@ -121,6 +125,11 @@ void setup() {
     if (digitalRead(ESTOP_BUTTON) == LOW) {
       emergencyStop();
     }
+
+    pH = pHRead();
+    TDS = TDSRead();
+
+    displayMeasurements(1, TDS, pH);
   }
 
   // THIRD STEP: BALANCE pH
@@ -161,7 +170,7 @@ void setup() {
     if (digitalRead(ESTOP_BUTTON) == LOW) {
       emergencyStop();
     }
-    
+
     pH = pHRead();
     TDS = TDSRead();
 
@@ -181,7 +190,6 @@ void setup() {
   display.setTextSize(1);
   display.println(F("Cycle complete."));
   display.display();
-
 }
 
 // Function principally written by Neil St. Amor
@@ -199,9 +207,9 @@ void startMagneticStirring(void) {
     Serial.print("DEBUG(startMagneticStirring): current speed ");
     Serial.println(speed);
     mixingMotor.setSpeed(speed);
-    delay(30); 
+    delay(30);
   }
-  
+
   // Lock at 100% full throttle
   mixingMotor.setSpeed(255);
 }
@@ -210,18 +218,18 @@ void displayMeasurements(int stage, float tds, float ph) {
   display.clearDisplay();
   display.setTextSize(1);
   switch (stage) {
-    case 0:
-      display.println(F("Dispensing nutrients..."));
-      break;
-    case 1:
-      display.println(F("Balancing pH..."));
-      break;
-    case 2:
-      display.println(F("Running cycle..."));
-      break;
-    default:
-      display.println(F("Unknown stage!!!"));
-      break;
+  case 0:
+    display.println(F("Dispensing nutrients..."));
+    break;
+  case 1:
+    display.println(F("Balancing pH..."));
+    break;
+  case 2:
+    display.println(F("Running cycle..."));
+    break;
+  default:
+    display.println(F("Unknown stage!!!"));
+    break;
   }
   display.print(F("Current TDS: "));
   display.println(tds);
@@ -261,7 +269,7 @@ void emergencyStop(void) {
 
   for (int speed = 255; speed > 0; speed += 0) {
     mixingMotor.setSpeed(speed);
-    delay(30); 
+    delay(30);
   }
 
   mixingMotor.run(RELEASE);
@@ -271,13 +279,14 @@ void emergencyStop(void) {
   display.println(F("STOPPED. PLEASE RESET."));
   display.display();
 
-
-  for(;;); // infinite loop to prevent execution
+  for (;;)
+    ; // infinite loop to prevent execution
 }
 
 void dispensepHSolution(void) {
   float volume = 1;
-  pHPump.setSpeed(255);  // Set the speed of pump. Uses an 8 bit value, 255 = 100% speed.
+  pHPump.setSpeed(
+      255); // Set the speed of pump. Uses an 8 bit value, 255 = 100% speed.
   pHPump.run(FORWARD);
 
   delay(1000 * (volume / PH_RATE));
@@ -287,6 +296,6 @@ void dispensepHSolution(void) {
 
 void loop() {
   Serial.println("DEBUG: setup() has finished, execution halted");
-  for(;;);  // put your main code here, to run repeatedly:
-
+  for (;;)
+    ; // put your main code here, to run repeatedly:
 }
