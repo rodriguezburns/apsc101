@@ -44,6 +44,12 @@ AF_DCMotor forwardPump(1);
 AF_DCMotor reversePump(2);
 AF_DCMotor mixingMotor(4);
 
+// Use a positional servo rated for 180 degrees of travel.
+const int SERVO_PIN = 10;
+const int SERVO_HOME_DEG = 0;
+const int SERVO_DISPENSE_DEG = 180;
+const unsigned long SERVO_STEP_MS = 20;
+const unsigned long SERVO_HOLD_MS = 4000;
 Servo servo;
 
 float TDS;
@@ -59,8 +65,8 @@ void setup() {
   // SET CORRECT PIN MODES
   pinMode(START_BUTTON, INPUT_PULLUP);
   pinMode(ESTOP_BUTTON, INPUT_PULLUP);
-
-  servo.attach(10); 
+  digitalWrite(SERVO_PIN, LOW);
+  pinMode(SERVO_PIN, OUTPUT);
 
   // INITIALIZE TDS PROBE
   TDSProbe.setPin(TDS_PROBE);
@@ -194,40 +200,66 @@ void mixing(void) {
   }
 }
 
+// Keep checking the emergency stop during both movement and holds.
+void waitWithEmergencyStop(unsigned long durationMs) {
+  const unsigned long started = millis();
+  do {
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
+    }
+  } while (millis() - started < durationMs);
+}
+
+void holdNutrientServo(int angle) {
+  Serial.print(F("DEBUG(nutrientDispensing): Holding command at "));
+  Serial.print(angle);
+  Serial.print(F(" degrees for "));
+  Serial.print(SERVO_HOLD_MS / 1000);
+  Serial.println(F(" seconds."));
+  waitWithEmergencyStop(SERVO_HOLD_MS);
+}
+
+void moveNutrientServo(int fromAngle, int toAngle) {
+  Serial.print(F("DEBUG(nutrientDispensing): Sweeping from "));
+  Serial.print(fromAngle);
+  Serial.print(F(" to "));
+  Serial.print(toAngle);
+  Serial.println(F(" degrees."));
+
+  const int step = toAngle > fromAngle ? 1 : -1;
+  for (int angle = fromAngle; angle != toAngle;) {
+    angle += step;
+    servo.write(angle);
+    waitWithEmergencyStop(SERVO_STEP_MS);
+  }
+  holdNutrientServo(toAngle);
+}
+
 void nutrientDispensing(void) {
-    // SECOND STEP: DISPENSE NUTRIENTS
-  while (true || (TDS < TDS_SETPOINT)) {
+  if (digitalRead(ESTOP_BUTTON) == LOW) {
+    emergencyStop();
+  }
+
+  // Set the home command before enabling the signal on pin 10.
+  servo.write(SERVO_HOME_DEG);
+  servo.attach(SERVO_PIN);
+  holdNutrientServo(SERVO_HOME_DEG);
+
+  // Keep repeating in the current debug mode.
+  while (true) {
     if (digitalRead(ESTOP_BUTTON) == LOW) {
       emergencyStop();
     }
 
-    while(1) {
-
     pH = pHRead();
     TDS = TDSRead();
-
     displayMeasurements(1, TDS, pH);
 
-    servo.write(0);
-
-    delay(5000);
-
-    servo.write(180);
-
-    delay(5000);
-
-    /*for (int servo_pos = 0; servo_pos <= 180; servo_pos += 1){
-    servo.write(servo_pos);
-    delay(200);
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
     }
-
-  for (int servo_pos = 180; servo_pos >= 0; servo_pos -= 1){
-    servo.write(servo_pos);
-    delay(200);
-  }*/
-  
-  //if (TDS >= TDS_SETPOINT) break;
-  }
+    moveNutrientServo(SERVO_HOME_DEG, SERVO_DISPENSE_DEG);
+    moveNutrientServo(SERVO_DISPENSE_DEG, SERVO_HOME_DEG);
   }
 }
 
@@ -322,6 +354,10 @@ float TDSRead(void) {
 }
 
 void emergencyStop(void) {
+  if (servo.attached()) {
+    servo.detach();
+    digitalWrite(SERVO_PIN, LOW);
+  }
   Serial.println("DEBUG(emergencyStop): Stopping.");
   display.clearDisplay();
   display.setCursor(0, 0);
