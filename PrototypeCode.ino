@@ -4,6 +4,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <math.h>
+#include <Servo.h>
 
 // SETPOINT DEFINITIONS
 #define TDS_SETPOINT 1500
@@ -15,8 +16,8 @@
 #define PH_RANGE 0.2
 
 // PIN DEFINITIONS
-#define START_BUTTON A5
-#define ESTOP_BUTTON A6
+#define START_BUTTON A4
+#define ESTOP_BUTTON A5
 #define PH_PROBE A3
 #define TDS_PROBE A2
 #define LIQUID_LEVEL_SENSOR 30
@@ -38,10 +39,16 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 GravityTDS TDSProbe;
 
 // MOTORS
-AF_DCMotor pHPump(4);
-AF_DCMotor forwardPump(3);
+AF_DCMotor pHPump(3);
+AF_DCMotor forwardPump(1);
 AF_DCMotor reversePump(2);
-AF_DCMotor mixingMotor(1);
+AF_DCMotor mixingMotor(4);
+
+Servo servo;
+
+float TDS;
+float pH;
+float volumeToTrough;
 
 void setup() {
   Serial.begin(9600);
@@ -52,6 +59,8 @@ void setup() {
   // SET CORRECT PIN MODES
   pinMode(START_BUTTON, INPUT_PULLUP);
   pinMode(ESTOP_BUTTON, INPUT_PULLUP);
+
+  servo.attach(10); 
 
   // INITIALIZE TDS PROBE
   TDSProbe.setPin(TDS_PROBE);
@@ -95,11 +104,11 @@ void setup() {
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
 
-  display.println(F("Ready to start. Press the"));
+  display.println(F("Ready to start. Press"));
   display.setTextSize(2);
-  display.println(F("START (left)"));
+  display.println(F("START (L)"));
   display.setTextSize(1);
-  display.println(F("button to start the cycle."));
+  display.println(F("button to start the\ncycle."));
   display.display();
 
   Serial.println("DEBUG: waiting for user input");
@@ -111,85 +120,29 @@ void setup() {
   Serial.println("DEBUG: starting mixing subassembly");
 
   // FIRST STEP: START MIXING
-  display.clearDisplay();
-  display.println(F("Starting mixing..."));
-  display.display();
+  //mixing();
 
-  startMagneticStirring();
-
-  float pH = pHRead();
-  float TDS = TDSRead();
-
-  // SECOND STEP: DISPENSE NUTRIENTS
-  while (TDS < TDS_SETPOINT) {
-    if (digitalRead(ESTOP_BUTTON) == LOW) {
-      emergencyStop();
-    }
-
-    pH = pHRead();
-    TDS = TDSRead();
-
-    displayMeasurements(1, TDS, pH);
-  }
+  // SECOND STEP: NUTRIENT DISPENSING
+  nutrientDispensing();
 
   // THIRD STEP: BALANCE pH
-
-  for (;;) {
-    if (digitalRead(ESTOP_BUTTON) == LOW) {
-      emergencyStop();
-    }
-
-    pH = pHRead();
-    TDS = TDSRead();
-
-    displayMeasurements(1, TDS, pH);
-
-    if (pH <= PH_SETPOINT + PH_RANGE && pH >= PH_SETPOINT - PH_RANGE) { // bad
-      break;
-    } else {
-      dispensepHSolution();
-    }
-
-    delay(750);
-  }
+  //phBalancing();
 
   // FOURTH STEP: CYCLE
-
-  // determine volume to pump
-  float volumeToTrough = M_PI * pow(3.5, 2) * 3;
-
-  forwardPump.setSpeed((int)(190 * (REVERSE_RATE / FORWARD_RATE)));
-  reversePump.setSpeed(255);
-  forwardPump.run(FORWARD);
-
-  delay(1000 * (volumeToTrough / REVERSE_RATE));
-
-  reversePump.run(FORWARD);
-
-  while (TDS > TDS_SETPOINT * 0.90) {
-    if (digitalRead(ESTOP_BUTTON) == LOW) {
-      emergencyStop();
-    }
-
-    pH = pHRead();
-    TDS = TDSRead();
-
-    displayMeasurements(2, TDS, pH);
-
-    delay(750);
-  }
+  //cycle();
 
   // FIFTH STEP: END
-  forwardPump.run(RELEASE);
+  /*forwardPump.run(RELEASE);
 
   delay(1000 * (volumeToTrough / REVERSE_RATE));
 
-  reversePump.run(RELEASE);
+  reversePump.run(RELEASE);*/
 
   display.clearDisplay();
   display.setTextSize(1);
   display.println(F("Cycle complete."));
   display.display();
+  delay(10000);
 }
 
 // Function principally written by Neil St. Amor
@@ -214,8 +167,119 @@ void startMagneticStirring(void) {
   mixingMotor.setSpeed(255);
 }
 
+void mixing(void) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println(F("Starting mixing..."));
+  display.display();
+
+  startMagneticStirring();
+
+  float pH = pHRead();
+  float TDS = TDSRead();
+
+  while (true) {
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
+    }
+
+    pH = pHRead();
+    TDS = TDSRead();
+
+    displayMeasurements(2, TDS, pH);
+
+    delay(750);
+
+    Serial.println("LOOP");
+  }
+}
+
+void nutrientDispensing(void) {
+    // SECOND STEP: DISPENSE NUTRIENTS
+  while (true || (TDS < TDS_SETPOINT)) {
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
+    }
+
+    while(1) {
+
+    pH = pHRead();
+    TDS = TDSRead();
+
+    displayMeasurements(1, TDS, pH);
+
+    servo.write(0);
+
+    delay(5000);
+
+    servo.write(180);
+
+    delay(5000);
+
+    /*for (int servo_pos = 0; servo_pos <= 180; servo_pos += 1){
+    servo.write(servo_pos);
+    delay(200);
+    }
+
+  for (int servo_pos = 180; servo_pos >= 0; servo_pos -= 1){
+    servo.write(servo_pos);
+    delay(200);
+  }*/
+  
+  //if (TDS >= TDS_SETPOINT) break;
+  }
+  }
+}
+
+void cycle(void) {
+  float volumeToTrough = M_PI * pow(3.5, 2) * 3;
+
+  forwardPump.setSpeed((int)(190 * (REVERSE_RATE / FORWARD_RATE)));
+  reversePump.setSpeed(255);
+  forwardPump.run(FORWARD);
+
+  delay(1000 * (volumeToTrough / REVERSE_RATE));
+
+  reversePump.run(FORWARD);
+
+  while (true || (TDS > TDS_SETPOINT * 0.90)) {
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
+    }
+
+    pH = pHRead();
+    TDS = TDSRead();
+
+    displayMeasurements(2, TDS, pH);
+
+    delay(750);
+  }
+}
+
+void phBalancing(void) {
+  for (;;) {
+    if (digitalRead(ESTOP_BUTTON) == LOW) {
+      emergencyStop();
+    }
+
+    pH = pHRead();
+    TDS = TDSRead();
+
+    displayMeasurements(1, TDS, pH);
+
+    if (pH <= PH_SETPOINT + PH_RANGE && pH >= PH_SETPOINT - PH_RANGE) { // bad
+      break;
+    } else {
+      dispensepHSolution();
+    }
+
+    delay(750);
+  }
+}
+
 void displayMeasurements(int stage, float tds, float ph) {
   display.clearDisplay();
+  display.setCursor(0, 0);
   display.setTextSize(1);
   switch (stage) {
   case 0:
@@ -258,7 +322,9 @@ float TDSRead(void) {
 }
 
 void emergencyStop(void) {
+  Serial.println("DEBUG(emergencyStop): Stopping.");
   display.clearDisplay();
+  display.setCursor(0, 0);
   display.setTextSize(1);
   display.println(F("STOPPING!"));
   display.display();
@@ -267,7 +333,9 @@ void emergencyStop(void) {
   forwardPump.run(RELEASE);
   reversePump.run(RELEASE);
 
-  for (int speed = 255; speed > 0; speed += 0) {
+  for (int speed = 255; speed >= 0; speed -= 5) {
+    Serial.print("DEBUG(emergencyStop): current speed ");
+    Serial.println(speed);
     mixingMotor.setSpeed(speed);
     delay(30);
   }
@@ -275,8 +343,9 @@ void emergencyStop(void) {
   mixingMotor.run(RELEASE);
 
   display.clearDisplay();
+  display.setCursor(0, 0);
   display.setTextSize(1);
-  display.println(F("STOPPED. PLEASE RESET."));
+  display.println(F("STOPPED PLEASE RESET"));
   display.display();
 
   for (;;)
