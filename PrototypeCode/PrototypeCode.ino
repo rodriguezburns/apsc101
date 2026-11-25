@@ -243,7 +243,7 @@ void nutrientDispensing(void) {
   // Set the home command before enabling the signal on pin 10.
   servo.write(SERVO_HOME_DEG);
   servo.attach(SERVO_PIN);
-  holdNutrientServo(SERVO_HOME_DEG);
+  //holdNutrientServo(SERVO_HOME_DEG);
 
   // Keep repeating in the current debug mode.
   while (true) {
