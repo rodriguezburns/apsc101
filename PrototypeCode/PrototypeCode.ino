@@ -6,6 +6,8 @@
 #include <math.h>
 #include <Servo.h>
 
+#define INDIVIDUAL_TESTING true
+
 // SETPOINT DEFINITIONS
 #define TDS_SETPOINT 1500
 #define PH_SETPOINT 6.5
@@ -46,8 +48,8 @@ AF_DCMotor mixingMotor(4);
 
 // Use a positional servo rated for 180 degrees of travel.
 const int SERVO_PIN = 10;
-const int SERVO_HOME_DEG = 0;
-const int SERVO_DISPENSE_DEG = 180;
+const int SERVO_HOME_DEG = 180;
+const int SERVO_DISPENSE_DEG = 0;
 const unsigned long SERVO_STEP_MS = 20;
 const unsigned long SERVO_HOLD_MS = 4000;
 Servo servo;
@@ -129,13 +131,13 @@ void setup() {
   //mixing();
 
   // SECOND STEP: NUTRIENT DISPENSING
-  nutrientDispensing();
+  //nutrientDispensing();
 
   // THIRD STEP: BALANCE pH
   //phBalancing();
 
   // FOURTH STEP: CYCLE
-  //cycle();
+  cycle();
 
   // FIFTH STEP: END
   /*forwardPump.run(RELEASE);
@@ -243,10 +245,12 @@ void nutrientDispensing(void) {
   // Set the home command before enabling the signal on pin 10.
   servo.write(SERVO_HOME_DEG);
   servo.attach(SERVO_PIN);
-  //holdNutrientServo(SERVO_HOME_DEG);
+  holdNutrientServo(SERVO_HOME_DEG);
+
+  TDS = TDSRead();
 
   // Keep repeating in the current debug mode.
-  while (true) {
+  while (INDIVIDUAL_TESTING || (TDS < TDS_SETPOINT)) {
     if (digitalRead(ESTOP_BUTTON) == LOW) {
       emergencyStop();
     }
@@ -266,15 +270,20 @@ void nutrientDispensing(void) {
 void cycle(void) {
   float volumeToTrough = M_PI * pow(3.5, 2) * 3;
 
-  forwardPump.setSpeed((int)(190 * (REVERSE_RATE / FORWARD_RATE)));
+  int forwardSpeed = (int)(190 * (REVERSE_RATE / FORWARD_RATE));
+
+  Serial.print("DEBUG(cycle): forward speed ");
+  Serial.println(forwardSpeed);
+
+  forwardPump.setSpeed(forwardSpeed);
   reversePump.setSpeed(255);
-  forwardPump.run(FORWARD);
+  forwardPump.run(BACKWARD);
 
   delay(1000 * (volumeToTrough / REVERSE_RATE));
 
   reversePump.run(FORWARD);
 
-  while (true || (TDS > TDS_SETPOINT * 0.90)) {
+  while (INDIVIDUAL_TESTING || (TDS > TDS_SETPOINT * 0.90)) {
     if (digitalRead(ESTOP_BUTTON) == LOW) {
       emergencyStop();
     }
@@ -299,7 +308,7 @@ void phBalancing(void) {
 
     displayMeasurements(1, TDS, pH);
 
-    if (pH <= PH_SETPOINT + PH_RANGE && pH >= PH_SETPOINT - PH_RANGE) { // bad
+    if (!INDIVIDUAL_TESTING && (pH <= PH_SETPOINT + PH_RANGE && pH >= PH_SETPOINT - PH_RANGE)) { // bad
       break;
     } else {
       dispensepHSolution();
@@ -376,7 +385,10 @@ void emergencyStop(void) {
     delay(30);
   }
 
+
   mixingMotor.run(RELEASE);
+
+  //holdNutrientServo(SERVO_HOME_DEG);
 
   display.clearDisplay();
   display.setCursor(0, 0);
